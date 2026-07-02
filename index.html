@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高精度決策時鐘</title>
+    <title>高精度決策時鐘 - 終極搶票版</title>
     <style>
         :root { --bg: #121212; --text: #e0e0e0; --accent: #00e676; --alert: #ff1744; --local: #03a9f4; }
         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; transition: background-color 0.2s; }
@@ -20,13 +20,15 @@
         .tab[data-mode="standard"].active { background: var(--accent); }
         .tab[data-mode="ticket"].active { background: var(--alert); }
         .settings-panel { background: #1e1e1e; padding: 15px; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; }
-        input[type="url"], input[type="time"], button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; width: 100%; box-sizing: border-box; }
-        input[type="url"], input[type="time"] { background: #333; color: #fff; }
+        input[type="url"], input[type="time"], input[type="number"], button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; width: 100%; box-sizing: border-box; }
+        input[type="url"], input[type="time"], input[type="number"] { background: #333; color: #fff; }
         button { background: #333; color: #fff; cursor: pointer; font-weight: bold; }
         button:hover { background: #444; }
         .btn-sync { background: #555; color: #fff;}
         .btn-sync:hover { background: #666; }
         .checkbox-label { font-size: 13px; display: flex; align-items: center; gap: 6px; color: #ccc; cursor: pointer;}
+        .input-group { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #ccc; background: #2a2a2a; padding: 8px; border-radius: 6px; }
+        .input-group input { width: 100px; padding: 6px; text-align: center; }
         .status-dot { display: inline-block; width: 10px; height: 10px; background: #555; border-radius: 50%; margin-right: 8px; }
         .sync-active { background: var(--local); box-shadow: 0 0 8px var(--local); }
     </style>
@@ -47,9 +49,9 @@
 
     <div class="controls">
         <div class="tabs">
-            <div class="tab active" data-mode="local" onclick="switchMode('local')">💻 本機時間</div>
-            <div class="tab" data-mode="standard" onclick="switchMode('standard')">🕒 標準時間</div>
-            <div class="tab" data-mode="ticket" onclick="switchMode('ticket')">🎟️ 搶票模式</div>
+            <div class="tab active" data-mode="local" onclick="switchMode('local')">💻 本機</div>
+            <div class="tab" data-mode="standard" onclick="switchMode('standard')">🕒 標準</div>
+            <div class="tab" data-mode="ticket" onclick="switchMode('ticket')">🎟️ 搶票</div>
         </div>
 
         <div class="settings-panel" id="settings-panel">
@@ -59,8 +61,14 @@
 
             <input type="time" id="target-time" step="1" title="目標/開賣時間">
             
-            <label class="checkbox-label" title="會使用 DNS 預先解析與 TCP 預先連線，保證不觸發錯誤快取">
-                <input type="checkbox" id="auto-redirect"> 倒數歸零自動跳轉 (開啟底層通道 Preload)
+            <!-- 手動跳轉微調 -->
+            <div class="input-group">
+                <span>手動跳轉微調 (毫秒)<br><small style="color:#888;">負數:提早跳轉 / 正數:延遲跳轉</small></span>
+                <input type="number" id="manual-offset" value="0" placeholder="例如: -50">
+            </div>
+
+            <label class="checkbox-label" title="會使用 HTTP/2 實體連線保活機制，突破 F12 看不見的盲區">
+                <input type="checkbox" id="auto-redirect"> 倒數自動跳轉 (開啟 HTTP/2 預載通道)
             </label>
             
             <div id="sync-group" style="display: none; flex-direction: column; gap: 12px;">
@@ -77,7 +85,6 @@
     <script>
         const API_BASE = 'https://api.time.candy.moe';
 
-        // 系統變數
         let mode = 'local';
         let timeOffset = 0;
         let rtt = 0; 
@@ -85,7 +92,6 @@
         let last10sSynced = false;
         let hasPreconnected = false;
 
-        // 【新增】狀態快取區：避免切換分頁重複發送 API 浪費額度
         const syncCache = {
             standard: { offset: 0, rtt: 0, lastSync: '-' },
             ticket: { offset: 0, rtt: 0, lastSync: '-' }
@@ -100,30 +106,35 @@
         const syncGroup = document.getElementById('sync-group');
         const targetUrlInput = document.getElementById('target-url');
         const targetTimeInput = document.getElementById('target-time');
+        const manualOffsetInput = document.getElementById('manual-offset');
         const autoRedirect = document.getElementById('auto-redirect');
         const autoSync10s = document.getElementById('auto-sync-10s');
 
-        // 【新增】安全預先連線機制 (DNS Prefetch & Preconnect)
+        // 【大升級】雙管齊下：標籤預載 + 真實 HTTP/2 握手保活
         function setupPreconnect() {
             const url = targetUrlInput.value;
             if (!url) return;
             try {
                 const origin = new URL(url).origin;
-                // 檢查是否已經插入過
+                
+                // 1. 靜態標籤宣告 (DNS & TCP)
                 if (!document.querySelector(`link[href="${origin}"]`)) {
-                    // DNS 預先解析
                     const dns = document.createElement('link');
-                    dns.rel = 'dns-prefetch';
-                    dns.href = origin;
-                    // TCP 與 TLS 預先握手 (不發出 HTTP Get)
+                    dns.rel = 'dns-prefetch'; dns.href = origin;
                     const pre = document.createElement('link');
-                    pre.rel = 'preconnect';
-                    pre.href = origin;
-                    
+                    pre.rel = 'preconnect'; pre.href = origin;
                     document.head.appendChild(dns);
                     document.head.appendChild(pre);
-                    console.log('⚡ 提早建立底層連線通道至:', origin);
                 }
+
+                // 2. 真實 HTTP/2 握手：利用 no-store 與 no-cors 強制對伺服器發起連線
+                // 我們只求「連線通道建立」，不乎它是否 404，這樣既不會干擾快取，又能維持通道暢通
+                fetch(origin + '/favicon.ico', {
+                    mode: 'no-cors',
+                    cache: 'no-store'
+                }).catch(() => {}); // 忽略錯誤，我們只要通道
+                
+                console.log('⚡ 已強制建立 HTTP/2 底層通道至:', origin);
             } catch (e) { console.error('Preconnect Error:', e); }
         }
 
@@ -168,12 +179,10 @@
                 const now = new Date();
                 const syncTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
                 
-                // 更新畫面
                 lastSyncEl.innerText = syncTimeStr;
                 rttEl.innerText = rtt + ' ms';
                 offsetEl.innerText = timeOffset.toFixed(1) + ' ms';
                 
-                // 【新增】寫入快取
                 syncCache[mode] = { offset: timeOffset, rtt: rtt, lastSync: syncTimeStr };
 
                 if (mode === 'standard') {
@@ -211,33 +220,38 @@
                     
                     const timeDiff = tDate.getTime() - preciseTime.getTime();
 
-                    // 進入最後 10 秒區間
                     if (timeDiff > 0 && timeDiff <= 10000) {
                         document.body.style.backgroundColor = '#2a0a0a';
                         
-                        // 1. 最後 10 秒自動對時 (僅觸發一次)
                         if (mode !== 'local' && autoSync10s.checked && !last10sSynced) {
                             last10sSynced = true;
                             syncTime(); 
                         }
 
-                        // 2. 建立底層通道 Preconnect (僅觸發一次)
-                        if (autoRedirect.checked && !hasPreconnected) {
+                        // 【重點修正】在倒數 5 秒時才觸發 HTTP/2 保活 (太早建立可能會被伺服器踢掉)
+                        if (autoRedirect.checked && timeDiff <= 5000 && !hasPreconnected) {
                             hasPreconnected = true;
                             setupPreconnect();
                         }
                     } else {
                         document.body.style.backgroundColor = 'var(--bg)';
-                        // 重置狀態
                         if (timeDiff > 10000 || timeDiff < 0) {
                             last10sSynced = false; 
                             hasPreconnected = false;
                         }
                     }
 
-                    // 歸零自動跳轉 (直接替換頁面，100% 繞過阻擋)
-                    const jumpOffset = (mode === 'local') ? 0 : (rtt / 2);
-                    if (autoRedirect.checked && timeDiff > -1000 && timeDiff <= jumpOffset) {
+                    // 【重點邏輯】結合自訂微調 (Manual Offset) 與 網路延遲補償 (RTT/2)
+                    // manualOffset: 負數=提早, 正數=延遲
+                    const userManualOffset = parseInt(manualOffsetInput.value) || 0;
+                    const autoJumpOffset = (mode === 'local') ? 0 : (rtt / 2);
+                    
+                    // 最終跳轉門檻： 網路補償 - 使用者微調
+                    // 若設定 -50，門檻變大 (auto + 50)，代表會更早就進入跳轉條件
+                    const finalJumpThreshold = autoJumpOffset - userManualOffset;
+
+                    // 放寬下限到 -10000，確保使用者就算輸入正數延遲幾秒鐘，也不會錯過跳轉判斷
+                    if (autoRedirect.checked && timeDiff > -10000 && timeDiff <= finalJumpThreshold) {
                         autoRedirect.checked = false; 
                         const redirectUrl = targetUrlInput.value || window.location.href;
                         window.location.href = redirectUrl; 
@@ -263,19 +277,16 @@
             document.body.style.backgroundColor = 'var(--bg)';
 
             if (mode === 'local') {
-                // 回到本機模式，重置畫面參數
                 timeOffset = 0; rtt = 0;
                 rttEl.innerText = '0 ms'; offsetEl.innerText = '0 ms';
                 syncGroup.style.display = 'none';
                 lastSyncEl.innerText = '-';
                 modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--local);"></span>本機時間模式 (不消耗要求數)`;
             } else {
-                // 進入連網模式
                 syncGroup.style.display = 'flex';
                 const state = syncCache[mode];
                 
                 if (state.lastSync !== '-') {
-                    // 【重點】如果之前同步過，直接載入快取，不發送 API！
                     timeOffset = state.offset;
                     rtt = state.rtt;
                     rttEl.innerText = rtt + ' ms';
@@ -286,7 +297,6 @@
                     const txt = mode === 'standard' ? '標準對時模式' : '搶票模式';
                     modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:${color};"></span>${txt} (使用暫存，節省額度)`;
                 } else {
-                    // 第一次進入該模式，發起同步
                     timeOffset = 0; rtt = 0;
                     rttEl.innerText = '0 ms'; offsetEl.innerText = '0 ms';
                     lastSyncEl.innerText = '同步中...';
@@ -295,7 +305,6 @@
             }
         }
 
-        // 防呆機制：當網址改變時，清空搶票模式的快取
         targetUrlInput.addEventListener('input', () => {
             syncCache.ticket = { offset: 0, rtt: 0, lastSync: '-' };
             if (mode === 'ticket') {
@@ -311,18 +320,14 @@
             }
             try {
                 const pipWindow = await documentPictureInPicture.requestWindow({ width: 360, height: 120 });
-                
-                // 【修改】動態 CSS：加入 vh 高度限制 (min 函式)，解決畫面太寬導致字體溢出上下邊界的問題
                 const pipStyle = pipWindow.document.createElement('style');
                 pipStyle.textContent = `
                     body { margin: 0; background: #121212; color: #e0e0e0; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
                     #clock-container { width: 100%; text-align: center; }
-                    /* 使用 min(15vw, 60vh) 確保不管怎麼拉扯，字體都在安全範圍 */
                     #clock { font-size: min(15vw, 60vh); font-weight: bold; white-space: nowrap; letter-spacing: -2px; margin: 0; line-height: 1; }
                     #ms { font-size: min(8vw, 30vh); color: #888; }
                 `;
                 pipWindow.document.head.appendChild(pipStyle);
-
                 pipWindow.document.body.innerHTML = '<div id="clock-container"><div id="clock"></div></div>';
                 
                 setInterval(() => {
