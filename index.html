@@ -39,6 +39,7 @@
 
     <div class="info-panel">
         <p><span id="mode-status"><span class="status-dot sync-active"></span>本機時間模式 (不消耗要求數)</span></p>
+        <p>最後對時: <strong id="val-last-sync">-</strong></p> <!-- 新增最後對時欄位 -->
         <p>網路補償 (RTT): <strong id="val-rtt">0 ms</strong></p>
         <p>時間誤差: <strong id="val-offset">0 ms</strong></p>
         <p>畫面渲染延遲: <strong id="val-render">0 ms</strong></p>
@@ -90,6 +91,7 @@
         const rttEl = document.getElementById('val-rtt');
         const offsetEl = document.getElementById('val-offset');
         const renderEl = document.getElementById('val-render');
+        const lastSyncEl = document.getElementById('val-last-sync'); // 新增 DOM 參照
         const modeStatus = document.getElementById('mode-status');
         const syncGroup = document.getElementById('sync-group');
         const targetUrlInput = document.getElementById('target-url');
@@ -135,6 +137,11 @@
                 timeOffset = (serverTime + (totalRTT / 2)) - currentLocalTime;
                 rtt = totalRTT.toFixed(1);
                 
+                // 成功對時後，記錄當下時間並更新 UI
+                const now = new Date();
+                const syncTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                lastSyncEl.innerText = syncTimeStr;
+
                 rttEl.innerText = rtt + ' ms';
                 offsetEl.innerText = timeOffset.toFixed(1) + ' ms';
                 
@@ -189,7 +196,6 @@
 
                     const jumpOffset = (mode === 'local') ? 0 : (rtt / 2);
                     if (autoRedirect.checked && timeDiff > -1000 && timeDiff <= jumpOffset) {
-                        // 統一跳轉邏輯：優先使用輸入框的網址，若空則重新整理本頁
                         const redirectUrl = targetUrlInput.value || window.location.href;
                         window.open(redirectUrl, '_blank');
                         autoRedirect.checked = false; 
@@ -220,12 +226,15 @@
 
             if (mode === 'local') {
                 syncGroup.style.display = 'none';
+                lastSyncEl.innerText = '-'; // 切換回本機模式時，顯示橫槓表示不適用
                 modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--local);"></span>本機時間模式 (不消耗要求數)`;
             } else if (mode === 'standard') {
                 syncGroup.style.display = 'flex';
+                lastSyncEl.innerText = '同步中...';
                 syncTime(); 
             } else if (mode === 'ticket') {
                 syncGroup.style.display = 'flex';
+                lastSyncEl.innerText = '同步中...';
                 syncTime(); 
             }
         }
