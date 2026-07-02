@@ -52,16 +52,19 @@
         </div>
 
         <div class="settings-panel" id="settings-panel">
-            <div id="url-group" style="display: none;">
-                <input type="url" id="target-url" placeholder="輸入售票網址 (例如: https://tixcraft.com)" value="https://tixcraft.com">
+            <!-- 網址輸入 (所有模式皆顯示) -->
+            <div id="url-group">
+                <input type="url" id="target-url" placeholder="輸入目標/跳轉網址 (例如: https://tixcraft.com)" value="https://tixcraft.com">
             </div>
 
+            <!-- 目標時間 -->
             <input type="time" id="target-time" step="1" title="目標/開賣時間">
             
             <label class="checkbox-label">
                 <input type="checkbox" id="auto-redirect"> 倒數歸零自動跳轉網頁 (含延遲修正)
             </label>
             
+            <!-- 僅連網模式顯示的選項 -->
             <div id="sync-group" style="display: none; flex-direction: column; gap: 12px;">
                 <label class="checkbox-label">
                     <input type="checkbox" id="auto-sync-10s"> 最後 10 秒自動觸發一次精準對時
@@ -88,7 +91,6 @@
         const offsetEl = document.getElementById('val-offset');
         const renderEl = document.getElementById('val-render');
         const modeStatus = document.getElementById('mode-status');
-        const urlGroup = document.getElementById('url-group');
         const syncGroup = document.getElementById('sync-group');
         const targetUrlInput = document.getElementById('target-url');
         const targetTimeInput = document.getElementById('target-time');
@@ -110,7 +112,11 @@
                     serverTime = data.serverTime;
                 } else if (mode === 'ticket') {
                     const url = targetUrlInput.value;
-                    if(!url) return;
+                    if(!url) {
+                        alert("請先輸入售票網址！");
+                        modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--alert);"></span>搶票模式 (請輸入網址)`;
+                        return;
+                    }
                     modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:#ff9800;"></span>探測目標伺服器中...`;
                     const res = await fetch(`${API_BASE}/api/proxy-time?url=${encodeURIComponent(url)}`);
                     if(!res.ok) throw new Error('API Error');
@@ -183,7 +189,8 @@
 
                     const jumpOffset = (mode === 'local') ? 0 : (rtt / 2);
                     if (autoRedirect.checked && timeDiff > -1000 && timeDiff <= jumpOffset) {
-                        const redirectUrl = (mode === 'ticket') ? targetUrlInput.value : window.location.href;
+                        // 統一跳轉邏輯：優先使用輸入框的網址，若空則重新整理本頁
+                        const redirectUrl = targetUrlInput.value || window.location.href;
                         window.open(redirectUrl, '_blank');
                         autoRedirect.checked = false; 
                     }
@@ -212,15 +219,12 @@
             document.body.style.backgroundColor = 'var(--bg)';
 
             if (mode === 'local') {
-                urlGroup.style.display = 'none';
                 syncGroup.style.display = 'none';
                 modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--local);"></span>本機時間模式 (不消耗要求數)`;
             } else if (mode === 'standard') {
-                urlGroup.style.display = 'none';
                 syncGroup.style.display = 'flex';
                 syncTime(); 
             } else if (mode === 'ticket') {
-                urlGroup.style.display = 'block';
                 syncGroup.style.display = 'flex';
                 syncTime(); 
             }
