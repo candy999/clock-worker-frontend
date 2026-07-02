@@ -7,7 +7,7 @@
     <style>
         :root { --bg: #121212; --text: #e0e0e0; --accent: #00e676; --alert: #ff1744; --local: #03a9f4; }
         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; transition: background-color 0.2s; }
-        .clock-container { text-align: center; margin-bottom: 20px; transition: transform 0.2s; }
+        .clock-container { text-align: center; margin-bottom: 20px; transition: transform 0.2s; width: 100%; }
         #clock { font-family: 'Courier New', Courier, monospace; font-size: 12vw; font-weight: bold; line-height: 1; margin: 0; letter-spacing: -2px; }
         #ms { font-size: 5vw; color: #888; }
         .info-panel { background: #1e1e1e; padding: 15px 25px; border-radius: 12px; font-size: 14px; color: #aaa; margin-bottom: 20px; text-align: left; max-width: 400px; width: 90%; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
@@ -39,7 +39,7 @@
 
     <div class="info-panel">
         <p><span id="mode-status"><span class="status-dot sync-active"></span>本機時間模式 (不消耗要求數)</span></p>
-        <p>最後對時: <strong id="val-last-sync">-</strong></p> <!-- 新增最後對時欄位 -->
+        <p>最後對時: <strong id="val-last-sync">-</strong></p>
         <p>網路補償 (RTT): <strong id="val-rtt">0 ms</strong></p>
         <p>時間誤差: <strong id="val-offset">0 ms</strong></p>
         <p>畫面渲染延遲: <strong id="val-render">0 ms</strong></p>
@@ -53,19 +53,16 @@
         </div>
 
         <div class="settings-panel" id="settings-panel">
-            <!-- 網址輸入 (所有模式皆顯示) -->
             <div id="url-group">
                 <input type="url" id="target-url" placeholder="輸入目標/跳轉網址 (例如: https://tixcraft.com)" value="https://tixcraft.com">
             </div>
 
-            <!-- 目標時間 -->
             <input type="time" id="target-time" step="1" title="目標/開賣時間">
             
             <label class="checkbox-label">
                 <input type="checkbox" id="auto-redirect"> 倒數歸零自動跳轉網頁 (含延遲修正)
             </label>
             
-            <!-- 僅連網模式顯示的選項 -->
             <div id="sync-group" style="display: none; flex-direction: column; gap: 12px;">
                 <label class="checkbox-label">
                     <input type="checkbox" id="auto-sync-10s"> 最後 10 秒自動觸發一次精準對時
@@ -78,12 +75,11 @@
     </div>
 
     <script>
-        // 設定後端 API 網域
         const API_BASE = 'https://api.time.candy.moe';
 
         let mode = 'local';
         let timeOffset = 0;
-        let rtt = 0;
+        let rtt = 0; // 確保延遲值是數字型態
         let renderDelay = 0;
         let last10sSynced = false;
 
@@ -91,7 +87,7 @@
         const rttEl = document.getElementById('val-rtt');
         const offsetEl = document.getElementById('val-offset');
         const renderEl = document.getElementById('val-render');
-        const lastSyncEl = document.getElementById('val-last-sync'); // 新增 DOM 參照
+        const lastSyncEl = document.getElementById('val-last-sync');
         const modeStatus = document.getElementById('mode-status');
         const syncGroup = document.getElementById('sync-group');
         const targetUrlInput = document.getElementById('target-url');
@@ -134,10 +130,9 @@
                 const totalRTT = t3 - t0;
                 const currentLocalTime = Date.now();
                 
-                timeOffset = (serverTime + (totalRTT / 2)) - currentLocalTime;
-                rtt = totalRTT.toFixed(1);
+                rtt = parseFloat(totalRTT.toFixed(1)); // 保持數字型態
+                timeOffset = (serverTime + (rtt / 2)) - currentLocalTime;
                 
-                // 成功對時後，記錄當下時間並更新 UI
                 const now = new Date();
                 const syncTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
                 lastSyncEl.innerText = syncTimeStr;
@@ -194,11 +189,13 @@
                         }
                     }
 
+                    // 修改：解決彈出視窗被阻擋的問題，直接使用當前頁面跳轉 (window.location.href)
                     const jumpOffset = (mode === 'local') ? 0 : (rtt / 2);
                     if (autoRedirect.checked && timeDiff > -1000 && timeDiff <= jumpOffset) {
+                        autoRedirect.checked = false; // 防連點/防重複觸發
                         const redirectUrl = targetUrlInput.value || window.location.href;
-                        window.open(redirectUrl, '_blank');
-                        autoRedirect.checked = false; 
+                        // 100% 繞過彈窗阻擋：讓時鐘網頁直接「變成」售票網頁
+                        window.location.href = redirectUrl; 
                     }
                 }
             } else {
@@ -226,7 +223,7 @@
 
             if (mode === 'local') {
                 syncGroup.style.display = 'none';
-                lastSyncEl.innerText = '-'; // 切換回本機模式時，顯示橫槓表示不適用
+                lastSyncEl.innerText = '-';
                 modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--local);"></span>本機時間模式 (不消耗要求數)`;
             } else if (mode === 'standard') {
                 syncGroup.style.display = 'flex';
@@ -245,16 +242,24 @@
                 return;
             }
             try {
-                const pipWindow = await documentPictureInPicture.requestWindow({ width: 320, height: 120 });
-                const clone = document.getElementById('clock-container').cloneNode(true);
-                pipWindow.document.body.appendChild(clone);
-                pipWindow.document.body.style.background = '#121212';
-                pipWindow.document.body.style.color = '#e0e0e0';
-                pipWindow.document.body.style.display = 'flex';
-                pipWindow.document.body.style.alignItems = 'center';
-                pipWindow.document.body.style.justifyContent = 'center';
-                pipWindow.document.body.style.margin = '0';
+                // 建立基礎尺寸的 PiP 視窗
+                const pipWindow = await documentPictureInPicture.requestWindow({ width: 360, height: 100 });
                 
+                // 動態注入 CSS，使用視窗寬度單位 (vw) 讓文字完美適應任何大小的視窗
+                const pipStyle = pipWindow.document.createElement('style');
+                pipStyle.textContent = `
+                    body { margin: 0; background: #121212; color: #e0e0e0; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+                    #clock-container { width: 100%; text-align: center; }
+                    /* 使用 vw (Viewport Width)，數字會根據拉拽視窗自動無段縮放 */
+                    #clock { font-size: 15vw; font-weight: bold; white-space: nowrap; letter-spacing: -2px; margin: 0; line-height: 1; }
+                    #ms { font-size: 8vw; color: #888; }
+                `;
+                pipWindow.document.head.appendChild(pipStyle);
+
+                // 只插入純淨的時鐘容器
+                pipWindow.document.body.innerHTML = '<div id="clock-container"><div id="clock"></div></div>';
+                
+                // 每幀同步更新 PiP 視窗內的時鐘內容
                 setInterval(() => {
                     if(pipWindow.document.getElementById('clock')) {
                         pipWindow.document.getElementById('clock').innerHTML = clockEl.innerHTML;
