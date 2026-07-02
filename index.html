@@ -59,8 +59,8 @@
 
             <input type="time" id="target-time" step="1" title="目標/開賣時間">
             
-            <label class="checkbox-label">
-                <input type="checkbox" id="auto-redirect"> 倒數歸零自動跳轉網頁 (含延遲修正)
+            <label class="checkbox-label" title="會使用 DNS 預先解析與 TCP 預先連線，保證不觸發錯誤快取">
+                <input type="checkbox" id="auto-redirect"> 倒數歸零自動跳轉 (開啟底層通道 Preload)
             </label>
             
             <div id="sync-group" style="display: none; flex-direction: column; gap: 12px;">
@@ -77,11 +77,19 @@
     <script>
         const API_BASE = 'https://api.time.candy.moe';
 
+        // 系統變數
         let mode = 'local';
         let timeOffset = 0;
-        let rtt = 0; // 確保延遲值是數字型態
+        let rtt = 0; 
         let renderDelay = 0;
         let last10sSynced = false;
+        let hasPreconnected = false;
+
+        // 【新增】狀態快取區：避免切換分頁重複發送 API 浪費額度
+        const syncCache = {
+            standard: { offset: 0, rtt: 0, lastSync: '-' },
+            ticket: { offset: 0, rtt: 0, lastSync: '-' }
+        };
 
         const clockEl = document.getElementById('clock');
         const rttEl = document.getElementById('val-rtt');
@@ -94,6 +102,30 @@
         const targetTimeInput = document.getElementById('target-time');
         const autoRedirect = document.getElementById('auto-redirect');
         const autoSync10s = document.getElementById('auto-sync-10s');
+
+        // 【新增】安全預先連線機制 (DNS Prefetch & Preconnect)
+        function setupPreconnect() {
+            const url = targetUrlInput.value;
+            if (!url) return;
+            try {
+                const origin = new URL(url).origin;
+                // 檢查是否已經插入過
+                if (!document.querySelector(`link[href="${origin}"]`)) {
+                    // DNS 預先解析
+                    const dns = document.createElement('link');
+                    dns.rel = 'dns-prefetch';
+                    dns.href = origin;
+                    // TCP 與 TLS 預先握手 (不發出 HTTP Get)
+                    const pre = document.createElement('link');
+                    pre.rel = 'preconnect';
+                    pre.href = origin;
+                    
+                    document.head.appendChild(dns);
+                    document.head.appendChild(pre);
+                    console.log('⚡ 提早建立底層連線通道至:', origin);
+                }
+            } catch (e) { console.error('Preconnect Error:', e); }
+        }
 
         async function syncTime() {
             if (mode === 'local') return; 
@@ -130,16 +162,20 @@
                 const totalRTT = t3 - t0;
                 const currentLocalTime = Date.now();
                 
-                rtt = parseFloat(totalRTT.toFixed(1)); // 保持數字型態
+                rtt = parseFloat(totalRTT.toFixed(1));
                 timeOffset = (serverTime + (rtt / 2)) - currentLocalTime;
                 
                 const now = new Date();
                 const syncTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                
+                // 更新畫面
                 lastSyncEl.innerText = syncTimeStr;
-
                 rttEl.innerText = rtt + ' ms';
                 offsetEl.innerText = timeOffset.toFixed(1) + ' ms';
                 
+                // 【新增】寫入快取
+                syncCache[mode] = { offset: timeOffset, rtt: rtt, lastSync: syncTimeStr };
+
                 if (mode === 'standard') {
                     modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--accent);"></span>標準對時模式 (已校正)`;
                 } else if(mode === 'ticket') {
@@ -175,26 +211,35 @@
                     
                     const timeDiff = tDate.getTime() - preciseTime.getTime();
 
+                    // 進入最後 10 秒區間
                     if (timeDiff > 0 && timeDiff <= 10000) {
                         document.body.style.backgroundColor = '#2a0a0a';
                         
+                        // 1. 最後 10 秒自動對時 (僅觸發一次)
                         if (mode !== 'local' && autoSync10s.checked && !last10sSynced) {
                             last10sSynced = true;
                             syncTime(); 
                         }
+
+                        // 2. 建立底層通道 Preconnect (僅觸發一次)
+                        if (autoRedirect.checked && !hasPreconnected) {
+                            hasPreconnected = true;
+                            setupPreconnect();
+                        }
                     } else {
                         document.body.style.backgroundColor = 'var(--bg)';
+                        // 重置狀態
                         if (timeDiff > 10000 || timeDiff < 0) {
                             last10sSynced = false; 
+                            hasPreconnected = false;
                         }
                     }
 
-                    // 修改：解決彈出視窗被阻擋的問題，直接使用當前頁面跳轉 (window.location.href)
+                    // 歸零自動跳轉 (直接替換頁面，100% 繞過阻擋)
                     const jumpOffset = (mode === 'local') ? 0 : (rtt / 2);
                     if (autoRedirect.checked && timeDiff > -1000 && timeDiff <= jumpOffset) {
-                        autoRedirect.checked = false; // 防連點/防重複觸發
+                        autoRedirect.checked = false; 
                         const redirectUrl = targetUrlInput.value || window.location.href;
-                        // 100% 繞過彈窗阻擋：讓時鐘網頁直接「變成」售票網頁
                         window.location.href = redirectUrl; 
                     }
                 }
@@ -214,27 +259,50 @@
             document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
             document.querySelector(`.tab[data-mode="${mode}"]`).classList.add('active');
             
-            timeOffset = 0;
-            rtt = 0;
-            rttEl.innerText = '0 ms';
-            offsetEl.innerText = '0 ms';
             last10sSynced = false;
             document.body.style.backgroundColor = 'var(--bg)';
 
             if (mode === 'local') {
+                // 回到本機模式，重置畫面參數
+                timeOffset = 0; rtt = 0;
+                rttEl.innerText = '0 ms'; offsetEl.innerText = '0 ms';
                 syncGroup.style.display = 'none';
                 lastSyncEl.innerText = '-';
                 modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--local);"></span>本機時間模式 (不消耗要求數)`;
-            } else if (mode === 'standard') {
+            } else {
+                // 進入連網模式
                 syncGroup.style.display = 'flex';
-                lastSyncEl.innerText = '同步中...';
-                syncTime(); 
-            } else if (mode === 'ticket') {
-                syncGroup.style.display = 'flex';
-                lastSyncEl.innerText = '同步中...';
-                syncTime(); 
+                const state = syncCache[mode];
+                
+                if (state.lastSync !== '-') {
+                    // 【重點】如果之前同步過，直接載入快取，不發送 API！
+                    timeOffset = state.offset;
+                    rtt = state.rtt;
+                    rttEl.innerText = rtt + ' ms';
+                    offsetEl.innerText = timeOffset.toFixed(1) + ' ms';
+                    lastSyncEl.innerText = state.lastSync;
+                    
+                    const color = mode === 'standard' ? 'var(--accent)' : 'var(--alert)';
+                    const txt = mode === 'standard' ? '標準對時模式' : '搶票模式';
+                    modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:${color};"></span>${txt} (使用暫存，節省額度)`;
+                } else {
+                    // 第一次進入該模式，發起同步
+                    timeOffset = 0; rtt = 0;
+                    rttEl.innerText = '0 ms'; offsetEl.innerText = '0 ms';
+                    lastSyncEl.innerText = '同步中...';
+                    syncTime(); 
+                }
             }
         }
+
+        // 防呆機制：當網址改變時，清空搶票模式的快取
+        targetUrlInput.addEventListener('input', () => {
+            syncCache.ticket = { offset: 0, rtt: 0, lastSync: '-' };
+            if (mode === 'ticket') {
+                modeStatus.innerHTML = `<span class="status-dot" style="background:#888;"></span>網址已變更，請手動重新同步`;
+                lastSyncEl.innerText = '待同步';
+            }
+        });
 
         async function togglePiP() {
             if (!('documentPictureInPicture' in window)) {
@@ -242,24 +310,21 @@
                 return;
             }
             try {
-                // 建立基礎尺寸的 PiP 視窗
-                const pipWindow = await documentPictureInPicture.requestWindow({ width: 360, height: 100 });
+                const pipWindow = await documentPictureInPicture.requestWindow({ width: 360, height: 120 });
                 
-                // 動態注入 CSS，使用視窗寬度單位 (vw) 讓文字完美適應任何大小的視窗
+                // 【修改】動態 CSS：加入 vh 高度限制 (min 函式)，解決畫面太寬導致字體溢出上下邊界的問題
                 const pipStyle = pipWindow.document.createElement('style');
                 pipStyle.textContent = `
                     body { margin: 0; background: #121212; color: #e0e0e0; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
                     #clock-container { width: 100%; text-align: center; }
-                    /* 使用 vw (Viewport Width)，數字會根據拉拽視窗自動無段縮放 */
-                    #clock { font-size: 15vw; font-weight: bold; white-space: nowrap; letter-spacing: -2px; margin: 0; line-height: 1; }
-                    #ms { font-size: 8vw; color: #888; }
+                    /* 使用 min(15vw, 60vh) 確保不管怎麼拉扯，字體都在安全範圍 */
+                    #clock { font-size: min(15vw, 60vh); font-weight: bold; white-space: nowrap; letter-spacing: -2px; margin: 0; line-height: 1; }
+                    #ms { font-size: min(8vw, 30vh); color: #888; }
                 `;
                 pipWindow.document.head.appendChild(pipStyle);
 
-                // 只插入純淨的時鐘容器
                 pipWindow.document.body.innerHTML = '<div id="clock-container"><div id="clock"></div></div>';
                 
-                // 每幀同步更新 PiP 視窗內的時鐘內容
                 setInterval(() => {
                     if(pipWindow.document.getElementById('clock')) {
                         pipWindow.document.getElementById('clock').innerHTML = clockEl.innerHTML;
