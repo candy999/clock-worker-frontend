@@ -5,342 +5,914 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>高精度決策時鐘 - 終極搶票版</title>
     <style>
-        :root { --bg: #121212; --text: #e0e0e0; --accent: #00e676; --alert: #ff1744; --local: #03a9f4; }
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; transition: background-color 0.2s; }
-        .clock-container { text-align: center; margin-bottom: 20px; transition: transform 0.2s; width: 100%; }
-        #clock { font-family: 'Courier New', Courier, monospace; font-size: 12vw; font-weight: bold; line-height: 1; margin: 0; letter-spacing: -2px; }
-        #ms { font-size: 5vw; color: #888; }
-        .info-panel { background: #1e1e1e; padding: 15px 25px; border-radius: 12px; font-size: 14px; color: #aaa; margin-bottom: 20px; text-align: left; max-width: 400px; width: 90%; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .info-panel p { margin: 5px 0; display: flex; justify-content: space-between; }
-        .info-panel strong { color: #fff; }
-        .controls { display: flex; flex-direction: column; gap: 10px; width: 90%; max-width: 400px; }
-        .tabs { display: flex; background: #333; border-radius: 8px; overflow: hidden; margin-bottom: 5px;}
+        :root { --bg: #121212; --text: #e0e0e0; --accent: #00e676; --alert: #ff1744; --local: #03a9f4; --warn: #ff9800; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 24px 0 40px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; transition: background-color 0.2s; }
+        .clock-container { text-align: center; margin: 10px 0 16px; width: 100%; }
+        #clock { font-family: 'Courier New', Courier, monospace; font-size: 12vw; font-weight: bold; line-height: 1; margin: 0; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
+        #clock .ms { font-size: 5vw; color: #888; }
+        #countdown { font-family: 'Courier New', Courier, monospace; font-size: 4.5vw; color: #888; margin-top: 8px; min-height: 1.2em; font-variant-numeric: tabular-nums; }
+        #countdown.near { color: var(--alert); }
+        .info-panel { background: #1e1e1e; padding: 15px 25px; border-radius: 12px; font-size: 14px; color: #aaa; margin-bottom: 20px; text-align: left; max-width: 420px; width: 90%; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .info-panel p { margin: 5px 0; display: flex; justify-content: space-between; gap: 12px; }
+        .info-panel strong { color: #fff; font-variant-numeric: tabular-nums; text-align: right; }
+        .info-panel .warn { color: var(--warn); }
+        .controls { display: flex; flex-direction: column; gap: 10px; width: 90%; max-width: 420px; }
+        .tabs { display: flex; background: #333; border-radius: 8px; overflow: hidden; margin-bottom: 5px; }
         .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 13px; }
         .tab.active { background: var(--local); color: #000; }
         .tab[data-mode="standard"].active { background: var(--accent); }
         .tab[data-mode="ticket"].active { background: var(--alert); }
         .settings-panel { background: #1e1e1e; padding: 15px; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; }
-        input[type="url"], input[type="time"], input[type="number"], button { padding: 10px; border-radius: 6px; border: none; font-size: 14px; width: 100%; box-sizing: border-box; }
+        select { padding: 10px; border-radius: 6px; border: none; font-size: 14px; width: 100%; background: #333; color: #fff; }
+        #tz-label { font-size: 13px; color: #888; margin-top: 6px; }
+        input[type="url"], input[type="time"], input[type="number"], button, .btn { padding: 10px; border-radius: 6px; border: none; font-size: 14px; width: 100%; }
         input[type="url"], input[type="time"], input[type="number"] { background: #333; color: #fff; }
-        button { background: #333; color: #fff; cursor: pointer; font-weight: bold; }
-        button:hover { background: #444; }
-        .btn-sync { background: #555; color: #fff;}
+        button, .btn { background: #333; color: #fff; cursor: pointer; font-weight: bold; text-align: center; text-decoration: none; display: block; }
+        button:hover, .btn:hover { background: #444; }
+        button:disabled { opacity: 0.5; cursor: default; }
+        .btn-sync { background: #555; }
         .btn-sync:hover { background: #666; }
-        .checkbox-label { font-size: 13px; display: flex; align-items: center; gap: 6px; color: #ccc; cursor: pointer;}
-        .input-group { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #ccc; background: #2a2a2a; padding: 8px; border-radius: 6px; }
+        .checkbox-label { font-size: 13px; display: flex; align-items: center; gap: 6px; color: #ccc; cursor: pointer; }
+        .input-group { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #ccc; background: #2a2a2a; padding: 8px; border-radius: 6px; gap: 8px; }
         .input-group input { width: 100px; padding: 6px; text-align: center; }
         .status-dot { display: inline-block; width: 10px; height: 10px; background: #555; border-radius: 50%; margin-right: 8px; }
         .sync-active { background: var(--local); box-shadow: 0 0 8px var(--local); }
+        .hint { font-size: 12px; color: #888; line-height: 1.5; margin: 0; }
+        .section-title { font-size: 13px; color: #ccc; font-weight: bold; margin: 4px 0 0; }
+        .row { display: flex; gap: 8px; }
+        .row > * { flex: 1; }
+        .btn-bookmarklet { background: #3b2a5a; border: 1px dashed #9575cd; }
+        #pip-video { width: 100%; border-radius: 6px; background: #000; display: none; }
+        #pip-progress { display: none; }
+        details summary { cursor: pointer; font-size: 13px; color: #ccc; }
     </style>
 </head>
 <body>
 
-    <div class="clock-container" id="clock-container">
-        <div id="clock">00:00:00<span id="ms">.000</span></div>
+    <div class="clock-container">
+        <div id="clock"><span id="hms">00:00:00</span><span class="ms" id="ms">.000</span></div>
+        <div id="countdown"></div>
+        <div id="tz-label"></div>
     </div>
 
     <div class="info-panel">
-        <p><span id="mode-status"><span class="status-dot sync-active"></span>本機時間模式 (不消耗要求數)</span></p>
+        <p><span id="mode-status"><span class="status-dot sync-active"></span>本機時間模式（不消耗要求數）</span></p>
         <p>最後對時: <strong id="val-last-sync">-</strong></p>
-        <p>網路補償 (RTT): <strong id="val-rtt">0 ms</strong></p>
-        <p>時間誤差: <strong id="val-offset">0 ms</strong></p>
-        <p>畫面渲染延遲: <strong id="val-render">0 ms</strong></p>
+        <p>網路延遲（最佳 RTT）: <strong id="val-rtt">-</strong></p>
+        <p>時間誤差（與本機相比）: <strong id="val-offset">0 ms</strong></p>
+        <p>估計精度: <strong id="val-unc">-</strong></p>
+        <p>跳轉提前量: <strong id="val-lead">-</strong></p>
+        <p>螢幕幀間隔 / 顯示補償: <strong id="val-render">-</strong></p>
+        <p id="row-warn" style="display:none;"><span class="warn" id="val-warn"></span></p>
     </div>
 
     <div class="controls">
         <div class="tabs">
-            <div class="tab active" data-mode="local" onclick="switchMode('local')">💻 本機</div>
-            <div class="tab" data-mode="standard" onclick="switchMode('standard')">🕒 標準</div>
-            <div class="tab" data-mode="ticket" onclick="switchMode('ticket')">🎟️ 搶票</div>
+            <div class="tab active" data-mode="local">💻 本機</div>
+            <div class="tab" data-mode="standard">🕒 標準</div>
+            <div class="tab" data-mode="ticket">🎟️ 搶票</div>
         </div>
 
-        <div class="settings-panel" id="settings-panel">
-            <div id="url-group">
-                <input type="url" id="target-url" placeholder="輸入目標/跳轉網址 (例如: https://tixcraft.com)" value="https://tixcraft.com">
+        <div class="settings-panel">
+            <select id="site-preset" title="常用網站（選了之後網址仍可自由修改）">
+                <option value="">✏️ 自訂網址（下面直接輸入）</option>
+                <optgroup label="台灣售票">
+                    <option value="https://tixcraft.com" data-tz="Asia/Taipei">拓元 tixcraft</option>
+                    <option value="https://kktix.com" data-tz="Asia/Taipei">KKTIX</option>
+                    <option value="https://ticket.ibon.com.tw" data-tz="Asia/Taipei">ibon 售票</option>
+                    <option value="https://ticketplus.com.tw" data-tz="Asia/Taipei">遠大 ticketplus</option>
+                    <option value="https://ticket.com.tw" data-tz="Asia/Taipei">年代售票</option>
+                    <option value="https://www.kham.com.tw" data-tz="Asia/Taipei">寬宏售票</option>
+                    <option value="https://www.famiticket.com.tw" data-tz="Asia/Taipei">全家 FamiTicket</option>
+                    <option value="https://www.opentix.life" data-tz="Asia/Taipei">OPENTIX 兩廳院</option>
+                </optgroup>
+                <optgroup label="日本售票（日本時間）">
+                    <option value="https://eplus.jp" data-tz="Asia/Tokyo">e+ イープラス</option>
+                    <option value="https://l-tike.com" data-tz="Asia/Tokyo">ローチケ</option>
+                    <option value="https://t.pia.jp" data-tz="Asia/Tokyo">チケットぴあ</option>
+                    <option value="https://ticket.rakuten.co.jp" data-tz="Asia/Tokyo">楽天チケット</option>
+                </optgroup>
+                <optgroup label="韓國售票（韓國時間）">
+                    <option value="https://nol.interpark.com" data-tz="Asia/Seoul">NOL 인터파크 티켓</option>
+                    <option value="https://ticket.melon.com" data-tz="Asia/Seoul">멜론티켓 Melon</option>
+                    <option value="https://ticket.yes24.com" data-tz="Asia/Seoul">YES24 티켓</option>
+                    <option value="https://www.ticketlink.co.kr" data-tz="Asia/Seoul">티켓링크 Ticketlink</option>
+                </optgroup>
+                <optgroup label="香港">
+                    <option value="https://www.cityline.com" data-tz="Asia/Hong_Kong">Cityline</option>
+                </optgroup>
+                <optgroup label="購物搶購">
+                    <option value="https://shopee.tw" data-tz="Asia/Taipei">蝦皮 台灣</option>
+                    <option value="https://shopee.sg" data-tz="Asia/Singapore">Shopee 新加坡</option>
+                    <option value="https://shopee.com.my" data-tz="Asia/Kuala_Lumpur">Shopee 馬來西亞</option>
+                    <option value="https://shopee.ph" data-tz="Asia/Manila">Shopee 菲律賓</option>
+                    <option value="https://shopee.co.th" data-tz="Asia/Bangkok">Shopee 泰國</option>
+                    <option value="https://shopee.vn" data-tz="Asia/Ho_Chi_Minh">Shopee 越南</option>
+                    <option value="https://shopee.co.id" data-tz="Asia/Jakarta">Shopee 印尼</option>
+                    <option value="https://www.momoshop.com.tw" data-tz="Asia/Taipei">momo 購物</option>
+                    <option value="https://24h.pchome.com.tw" data-tz="Asia/Taipei">PChome 24h</option>
+                </optgroup>
+            </select>
+            <input type="url" id="target-url" placeholder="任何網址都可以（例如：https://tixcraft.com 或 shopee.tw）" value="https://tixcraft.com">
+
+            <div class="row">
+                <input type="time" id="target-time" step="1" title="目標/開賣時間">
+                <select id="target-tz" title="開賣時間是哪一國的時間">
+                    <option value="">本機時區</option>
+                    <option value="Asia/Taipei">台灣時間</option>
+                    <option value="Asia/Tokyo">日本時間</option>
+                    <option value="Asia/Seoul">韓國時間</option>
+                    <option value="Asia/Hong_Kong">香港時間</option>
+                    <option value="Asia/Singapore">新加坡時間</option>
+                    <option value="Asia/Kuala_Lumpur">馬來西亞時間</option>
+                    <option value="Asia/Manila">菲律賓時間</option>
+                    <option value="Asia/Bangkok">泰國時間</option>
+                    <option value="Asia/Ho_Chi_Minh">越南時間</option>
+                    <option value="Asia/Jakarta">印尼（雅加達）時間</option>
+                </select>
             </div>
 
-            <input type="time" id="target-time" step="1" title="目標/開賣時間">
-            
-            <!-- 手動跳轉微調 -->
             <div class="input-group">
-                <span>手動跳轉微調 (毫秒)<br><small style="color:#888;">負數:提早跳轉 / 正數:延遲跳轉</small></span>
+                <span>手動微調（毫秒）<br><small style="color:#888;">負數：提早 / 正數：延後</small></span>
                 <input type="number" id="manual-offset" value="0" placeholder="例如: -50">
             </div>
 
-            <label class="checkbox-label" title="會使用 HTTP/2 實體連線保活機制，突破 F12 看不見的盲區">
-                <input type="checkbox" id="auto-redirect"> 倒數自動跳轉 (開啟 HTTP/2 預載通道)
+            <label class="checkbox-label">
+                <input type="checkbox" id="auto-redirect"> 倒數自動跳轉（本分頁跳到上面的網址）
             </label>
-            
+
             <div id="sync-group" style="display: none; flex-direction: column; gap: 12px;">
                 <label class="checkbox-label">
-                    <input type="checkbox" id="auto-sync-10s"> 最後 10 秒自動觸發一次精準對時
+                    <input type="checkbox" id="auto-sync-10s" checked> 最後 10 秒自動快速對時一次
                 </label>
-                <button class="btn-sync" onclick="syncTime()">🔄 手動同步時間</button>
+                <button class="btn-sync" id="btn-sync">🔄 手動同步時間</button>
             </div>
 
-            <button onclick="togglePiP()">📺 開啟畫中畫 (懸浮時鐘)</button>
+            <p class="section-title">📺 懸浮時鐘</p>
+            <button id="btn-pip">開啟畫中畫</button>
+            <div id="pip-progress" class="hint"></div>
+            <video id="pip-video" muted playsinline autopictureinpicture></video>
+            <button id="btn-pip-start" style="display:none;">▶ 開始畫中畫</button>
+
+            <p class="section-title">🔖 售票頁懸浮時鐘（推薦）</p>
+            <p class="hint">直接在售票頁上顯示校正後的時鐘，時間到在那個分頁重新整理。售票頁已經連好線，比從這裡跳過去更快；手機也能用。</p>
+            <div class="row">
+                <a class="btn btn-bookmarklet" id="bookmarklet" href="#" draggable="true">⏱ 售票頁時鐘</a>
+                <button id="btn-copy-bm">複製程式碼</button>
+            </div>
+            <details>
+                <summary>怎麼用？</summary>
+                <p class="hint">
+                    <b>電腦：</b>先在這裡對時、設定開賣時間，再把上面紫色按鈕拖到書籤列。到售票頁點一下書籤就會出現時鐘，再點一次關閉。<br>
+                    <b>手機：</b>按「複製程式碼」，隨便把一個網頁加入書籤，再編輯那個書籤，把網址整段換成剛剛複製的內容，名稱取「tc」。到售票頁在網址列輸入「tc」，點選那個書籤。<br>
+                    勾選「倒數自動跳轉」時，書籤時鐘會在時間到時重新整理售票頁。<br>
+                    書籤裡記著這次的對時結果與開賣時間；改了設定或重新對時後，記得更新書籤。打開時它也會自己再對時一次（右下角顯示 ✓）。
+                </p>
+            </details>
         </div>
     </div>
 
-    <script>
-        const API_BASE = 'https://api.time.candy.moe';
+<script>
+'use strict';
 
-        let mode = 'local';
-        let timeOffset = 0;
-        let rtt = 0; 
-        let renderDelay = 0;
-        let last10sSynced = false;
-        let hasPreconnected = false;
+const API_BASE = 'https://api.time.candy.moe';
+const $ = id => document.getElementById(id);
 
-        const syncCache = {
-            standard: { offset: 0, rtt: 0, lastSync: '-' },
-            ticket: { offset: 0, rtt: 0, lastSync: '-' }
-        };
+// ============================================================
+// 時基
+// 所有計算都以 performance.now()（單調時鐘，不受系統自動校時影響）為準。
+// offset = 伺服器時間 − (performance.timeOrigin + performance.now())
+// ============================================================
+const clockBase = () => performance.timeOrigin + performance.now();
+const wallSkew = () => Date.now() - clockBase();   // 系統時鐘與單調時鐘的差
+let offset = wallSkew();
+const serverAt = perfT => performance.timeOrigin + perfT + offset;
+const serverNow = () => serverAt(performance.now());
 
-        const clockEl = document.getElementById('clock');
-        const rttEl = document.getElementById('val-rtt');
-        const offsetEl = document.getElementById('val-offset');
-        const renderEl = document.getElementById('val-render');
-        const lastSyncEl = document.getElementById('val-last-sync');
-        const modeStatus = document.getElementById('mode-status');
-        const syncGroup = document.getElementById('sync-group');
-        const targetUrlInput = document.getElementById('target-url');
-        const targetTimeInput = document.getElementById('target-time');
-        const manualOffsetInput = document.getElementById('manual-offset');
-        const autoRedirect = document.getElementById('auto-redirect');
-        const autoSync10s = document.getElementById('auto-sync-10s');
+let mode = 'local';
+let syncing = false;
+const cache = {
+    standard: null,   // { offset, rtt, unc, label, skew }
+    ticket: null,     // { offset, rtt, unc, label, skew, workerOffset, targetToWorker, targetUnc }
+};
+// 量到售票網站本身的延遲（決定跳轉要提早多少）
+const target = { origin: null, rtt: null, coldArrival: null };
 
-        // 【大升級】雙管齊下：標籤預載 + 真實 HTTP/2 握手保活
-        function setupPreconnect() {
-            const url = targetUrlInput.value;
-            if (!url) return;
-            try {
-                const origin = new URL(url).origin;
-                
-                // 1. 靜態標籤宣告 (DNS & TCP)
-                if (!document.querySelector(`link[href="${origin}"]`)) {
-                    const dns = document.createElement('link');
-                    dns.rel = 'dns-prefetch'; dns.href = origin;
-                    const pre = document.createElement('link');
-                    pre.rel = 'preconnect'; pre.href = origin;
-                    document.head.appendChild(dns);
-                    document.head.appendChild(pre);
-                }
+const el = {
+    hms: $('hms'), ms: $('ms'), countdown: $('countdown'),
+    rtt: $('val-rtt'), offset: $('val-offset'), unc: $('val-unc'), lead: $('val-lead'),
+    render: $('val-render'), lastSync: $('val-last-sync'), warnRow: $('row-warn'), warn: $('val-warn'),
+    modeStatus: $('mode-status'), syncGroup: $('sync-group'),
+    url: $('target-url'), time: $('target-time'), manual: $('manual-offset'),
+    preset: $('site-preset'), tz: $('target-tz'), tzLabel: $('tz-label'),
+    autoRedirect: $('auto-redirect'), autoSync: $('auto-sync-10s'),
+};
 
-                // 2. 真實 HTTP/2 握手：利用 no-store 與 no-cors 強制對伺服器發起連線
-                // 我們只求「連線通道建立」，不乎它是否 404，這樣既不會干擾快取，又能維持通道暢通
-                fetch(origin + '/favicon.ico', {
-                    mode: 'no-cors',
-                    cache: 'no-store'
-                }).catch(() => {}); // 忽略錯誤，我們只要通道
-                
-                console.log('⚡ 已強制建立 HTTP/2 底層通道至:', origin);
-            } catch (e) { console.error('Preconnect Error:', e); }
-        }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+const fmtMs = v => (v == null || !isFinite(v)) ? '-' : `${v >= 0 ? '' : '−'}${Math.abs(v).toFixed(1)} ms`;
 
-        async function syncTime() {
-            if (mode === 'local') return; 
+function setStatus(color, text) {
+    el.modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:${color};box-shadow:0 0 8px ${color};"></span>${text}`;
+}
+function setWarn(text) {
+    el.warnRow.style.display = text ? 'flex' : 'none';
+    el.warn.textContent = text || '';
+}
+const nowLabel = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 
-            const t0 = performance.now();
-            let serverTime = 0;
-            
-            try {
-                if (mode === 'standard') {
-                    modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--accent);"></span>向標準伺服器同步中...`;
-                    const res = await fetch(`${API_BASE}/api/time`);
-                    if(!res.ok) throw new Error('API Error');
-                    const data = await res.json();
-                    serverTime = data.serverTime;
-                } else if (mode === 'ticket') {
-                    const url = targetUrlInput.value;
-                    if(!url) {
-                        alert("請先輸入售票網址！");
-                        modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--alert);"></span>搶票模式 (請輸入網址)`;
-                        return;
-                    }
-                    modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:#ff9800;"></span>探測目標伺服器中...`;
-                    const res = await fetch(`${API_BASE}/api/proxy-time?url=${encodeURIComponent(url)}`);
-                    if(!res.ok) throw new Error('API Error');
-                    const data = await res.json();
-                    if(data.targetTime) {
-                        serverTime = data.targetTime;
-                    } else {
-                        throw new Error('無 Date 標頭');
-                    }
-                }
+// 只打網域（例如 shopee.tw）也可以
+function normUrl(v) {
+    v = (v || '').trim();
+    if (!v) return '';
+    return /^https?:\/\//i.test(v) ? v : 'https://' + v;
+}
 
-                const t3 = performance.now();
-                const totalRTT = t3 - t0;
-                const currentLocalTime = Date.now();
-                
-                rtt = parseFloat(totalRTT.toFixed(1));
-                timeOffset = (serverTime + (rtt / 2)) - currentLocalTime;
-                
-                const now = new Date();
-                const syncTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-                
-                lastSyncEl.innerText = syncTimeStr;
-                rttEl.innerText = rtt + ' ms';
-                offsetEl.innerText = timeOffset.toFixed(1) + ' ms';
-                
-                syncCache[mode] = { offset: timeOffset, rtt: rtt, lastSync: syncTimeStr };
+// 時區：這些國家都沒有日光節約時間，用 Intl 取一次固定的 UTC 偏移量（分鐘）
+const tzOffsetCache = {};
+function tzOffsetMin(tz) {
+    if (!tz) return null;   // null = 本機時區
+    if (tz in tzOffsetCache) return tzOffsetCache[tz];
+    let off = null;
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' }).formatToParts(new Date());
+        const m = (parts.find(p => p.type === 'timeZoneName') || {}).value.match(/GMT([+-])(\d{2}):?(\d{2})?/);
+        off = m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] || 0)) : 0;
+    } catch { off = null; }
+    return (tzOffsetCache[tz] = off);
+}
+const currentTz = () => tzOffsetMin(el.tz.value);
+// 把某個時間點拆成「指定時區」的時分秒
+function partsInTz(t, offMin) {
+    const d = new Date(offMin == null ? t : t + offMin * 60000);
+    return offMin == null
+        ? { h: d.getHours(), m: d.getMinutes(), s: d.getSeconds(), ms: d.getMilliseconds() }
+        : { h: d.getUTCHours(), m: d.getUTCMinutes(), s: d.getUTCSeconds(), ms: d.getUTCMilliseconds() };
+}
 
-                if (mode === 'standard') {
-                    modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--accent);"></span>標準對時模式 (已校正)`;
-                } else if(mode === 'ticket') {
-                    modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--alert);"></span>搶票模式 (鎖定售票站時間)`;
-                }
+// ============================================================
+// 對時
+// ============================================================
 
-            } catch (err) {
-                console.error('同步失敗:', err);
-                modeStatus.innerHTML = `<span class="status-dot" style="background:red;"></span>同步失敗 (請重試)`;
-            }
-        }
+// 對 /api/time 取一次樣本。
+// 有 Timing-Allow-Origin 時用 Resource Timing 的 requestStart／responseStart，
+// 把 DNS、TCP、TLS 與瀏覽器排隊時間扣掉，只留真正的網路來回。
+async function sampleApi(i) {
+    const url = `${API_BASE}/api/time?s=${Date.now().toString(36)}${i}`;
+    const t0 = performance.now();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('API 錯誤 ' + res.status);
+    const data = await res.json();
+    const t3 = performance.now();
+    let a = t0, b = t3;
+    const entry = performance.getEntriesByName(url).pop();
+    if (entry && entry.requestStart > 0 && entry.responseStart >= entry.requestStart) {
+        a = entry.requestStart; b = entry.responseStart;
+    }
+    return { rtt: b - a, offset: data.serverTime - (performance.timeOrigin + (a + b) / 2) };
+}
 
-        function updateClock() {
-            const tStart = performance.now();
-            const preciseTime = new Date(Date.now() + timeOffset);
-            
-            const h = preciseTime.getHours().toString().padStart(2, '0');
-            const m = preciseTime.getMinutes().toString().padStart(2, '0');
-            const s = preciseTime.getSeconds().toString().padStart(2, '0');
-            const ms = preciseTime.getMilliseconds().toString().padStart(3, '0');
+// 標準對時：暖機 1 次（丟掉）＋ 取樣 n 次 → 取 RTT 最小的 3 筆，用它們 offset 的中位數
+async function syncWithApi(n = 8) {
+    await fetch(`${API_BASE}/api/time?warm=${Date.now()}`, { cache: 'no-store' }).catch(() => {});
+    const samples = [];
+    for (let i = 0; i < n; i++) {
+        try { samples.push(await sampleApi(i)); } catch (e) { if (i === n - 1 && !samples.length) throw e; }
+        await sleep(30);
+    }
+    if (performance.clearResourceTimings) performance.clearResourceTimings();
+    if (!samples.length) throw new Error('沒有成功的樣本');
+    samples.sort((x, y) => x.rtt - y.rtt);
+    const best = samples.slice(0, Math.min(3, samples.length)).map(s => s.offset).sort((x, y) => x - y);
+    const off = best[Math.floor(best.length / 2)];
+    return { offset: off, rtt: samples[0].rtt, unc: samples[0].rtt / 2 };
+}
 
-            clockEl.innerHTML = `${h}:${m}:${s}<span id="ms">.${ms}</span>`;
+// 量測到售票網站的延遲（no-cors，只看時間不看內容）
+async function measureTarget(url) {
+    let origin;
+    try { origin = new URL(url).origin; } catch { return; }
+    const probe = async () => {
+        const t0 = performance.now();
+        try {
+            await fetch(`${origin}/favicon.ico?_t=${Math.random().toString(36).slice(2)}`, { mode: 'no-cors', cache: 'no-store', credentials: 'omit' });
+        } catch { return null; }
+        return performance.now() - t0;
+    };
+    const cold = await probe();
+    const warm = [];
+    for (let i = 0; i < 3; i++) { const r = await probe(); if (r != null) warm.push(r); }
+    if (!warm.length) return;
+    const rtt = Math.min(...warm);
+    target.origin = origin;
+    target.rtt = rtt;
+    // 新連線時，請求抵達伺服器的時間 ≈ 冷連線總耗時 − 回程（RTT/2）
+    target.coldArrival = cold != null ? Math.max(rtt / 2, cold - rtt / 2) : rtt / 2;
+}
 
-            if (targetTimeInput.value) {
-                const targetMatch = targetTimeInput.value.split(':');
-                if(targetMatch.length >= 2) {
-                    const th = parseInt(targetMatch[0]);
-                    const tm = parseInt(targetMatch[1]);
-                    const ts = targetMatch[2] ? parseInt(targetMatch[2]) : 0;
-                    
-                    const tDate = new Date(preciseTime);
-                    tDate.setHours(th, tm, ts, 0);
-                    
-                    const timeDiff = tDate.getTime() - preciseTime.getTime();
-
-                    if (timeDiff > 0 && timeDiff <= 10000) {
-                        document.body.style.backgroundColor = '#2a0a0a';
-                        
-                        if (mode !== 'local' && autoSync10s.checked && !last10sSynced) {
-                            last10sSynced = true;
-                            syncTime(); 
-                        }
-
-                        // 【重點修正】在倒數 5 秒時才觸發 HTTP/2 保活 (太早建立可能會被伺服器踢掉)
-                        if (autoRedirect.checked && timeDiff <= 5000 && !hasPreconnected) {
-                            hasPreconnected = true;
-                            setupPreconnect();
-                        }
-                    } else {
-                        document.body.style.backgroundColor = 'var(--bg)';
-                        if (timeDiff > 10000 || timeDiff < 0) {
-                            last10sSynced = false; 
-                            hasPreconnected = false;
-                        }
-                    }
-
-                    // 【重點邏輯】結合自訂微調 (Manual Offset) 與 網路延遲補償 (RTT/2)
-                    // manualOffset: 負數=提早, 正數=延遲
-                    const userManualOffset = parseInt(manualOffsetInput.value) || 0;
-                    const autoJumpOffset = (mode === 'local') ? 0 : (rtt / 2);
-                    
-                    // 最終跳轉門檻： 網路補償 - 使用者微調
-                    // 若設定 -50，門檻變大 (auto + 50)，代表會更早就進入跳轉條件
-                    const finalJumpThreshold = autoJumpOffset - userManualOffset;
-
-                    // 放寬下限到 -10000，確保使用者就算輸入正數延遲幾秒鐘，也不會錯過跳轉判斷
-                    if (autoRedirect.checked && timeDiff > -10000 && timeDiff <= finalJumpThreshold) {
-                        autoRedirect.checked = false; 
-                        const redirectUrl = targetUrlInput.value || window.location.href;
-                        window.location.href = redirectUrl; 
-                    }
-                }
+async function syncTime({ quick = false } = {}) {
+    if (mode === 'local' || syncing) return;
+    syncing = true;
+    const myMode = mode;
+    try {
+        if (myMode === 'standard') {
+            setStatus('var(--accent)', '向標準伺服器同步中…');
+            const r = await syncWithApi(quick ? 5 : 8);
+            cache.standard = { ...r, label: nowLabel(), skew: wallSkew() };
+        } else {
+            const url = normUrl(el.url.value);
+            if (!url) { setStatus('var(--alert)', '搶票模式（請先輸入網址）'); return; }
+            setStatus('var(--warn)', '量測與時間伺服器的差…');
+            const std = await syncWithApi(quick ? 5 : 6);
+            let targetToWorker, targetUnc;
+            const prev = cache.ticket;
+            if (quick && prev && prev.url === url) {
+                // 快速對時：售票站與 Worker 的差變化很慢，沿用上次結果，只更新本機與 Worker 的差
+                targetToWorker = prev.targetToWorker; targetUnc = prev.targetUnc;
             } else {
-                document.body.style.backgroundColor = 'var(--bg)';
+                setStatus('var(--warn)', '探測售票網站時鐘中（約 8 秒）…');
+                const res = await fetch(`${API_BASE}/api/proxy-time?url=${encodeURIComponent(url)}`, { cache: 'no-store' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || data.status !== 'success') throw new Error(data.message || ('API 錯誤 ' + res.status));
+                if (typeof data.offset !== 'number') throw new Error('API 版本太舊，請重新部署 clock-worker-API');
+                targetToWorker = data.offset; targetUnc = data.uncertainty;
             }
+            cache.ticket = {
+                offset: std.offset + targetToWorker,
+                rtt: std.rtt, unc: std.unc + targetUnc,
+                workerOffset: std.offset, targetToWorker, targetUnc, url,
+                label: nowLabel(), skew: wallSkew(),
+            };
+        }
+        if (!quick || !target.rtt) await measureTarget(normUrl(el.url.value));
+        if (mode === myMode) applyCache();
+        updateBookmarklet();
+    } catch (err) {
+        console.error('同步失敗:', err);
+        const hint = /快取/.test(err.message) ? '（這個網址是 CDN 快取的靜態頁，可改填該網站購票或 API 用的網域）' : '';
+        setStatus('red', '同步失敗：' + err.message + hint);
+    } finally {
+        syncing = false;
+    }
+}
 
-            requestAnimationFrame((tNext) => {
-                renderDelay = (tNext - tStart).toFixed(2);
-                renderEl.innerText = renderDelay + ' ms';
-                updateClock(); 
+function applyCache() {
+    setWarn('');
+    if (mode === 'local') {
+        offset = wallSkew();
+        el.lastSync.textContent = '-'; el.rtt.textContent = '-'; el.unc.textContent = '依你的系統時鐘';
+        setStatus('var(--local)', '本機時間模式（不消耗要求數）');
+    } else {
+        const c = cache[mode];
+        if (!c) {
+            el.lastSync.textContent = '同步中…'; el.rtt.textContent = '-'; el.unc.textContent = '-';
+            syncTime();
+            return;
+        }
+        offset = c.offset;
+        el.lastSync.textContent = c.label;
+        el.rtt.textContent = fmtMs(c.rtt);
+        el.unc.textContent = '± ' + Math.max(1, c.unc).toFixed(0) + ' ms';
+        if (mode === 'standard') setStatus('var(--accent)', '標準對時模式（已校正）');
+        else setStatus('var(--alert)', `搶票模式（目標網站比時間伺服器 ${c.targetToWorker >= 0 ? '快' : '慢'} ${Math.abs(c.targetToWorker).toFixed(0)} ms）`);
+    }
+    el.offset.textContent = fmtMs(offset - wallSkew());
+    updateLeadText();
+}
+
+function switchMode(newMode) {
+    mode = newMode;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+    el.syncGroup.style.display = mode === 'local' ? 'none' : 'flex';
+    autoSynced = false;
+    applyCache();
+    updateBookmarklet();
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchMode(t.dataset.mode)));
+$('btn-sync').addEventListener('click', () => syncTime());
+
+function onUrlChanged() {
+    cache.ticket = null;
+    target.origin = target.rtt = target.coldArrival = null;
+    if (mode === 'ticket') { setStatus('#888', '網址已變更，請重新同步'); el.lastSync.textContent = '待同步'; }
+    updateLeadText(); updateBookmarklet(); saveSettings();
+}
+el.url.addEventListener('input', () => {
+    // 手動改網址：如果剛好等於某個預設就選它，否則下拉選單切回「自訂」
+    const v = normUrl(el.url.value).replace(/\/+$/, '');
+    const opt = [...el.preset.options].find(o => o.value && o.value === v);
+    el.preset.value = opt ? opt.value : '';
+    onUrlChanged();
+});
+// 下拉選單只是幫你填網址與時區，填完網址仍可自由修改
+el.preset.addEventListener('change', () => {
+    const opt = el.preset.selectedOptions[0];
+    if (!opt || !opt.value) { el.url.focus(); return; }
+    el.url.value = opt.value;
+    if (opt.dataset.tz) { el.tz.value = opt.dataset.tz; onTzChanged(); }
+    onUrlChanged();
+});
+function onTzChanged() {
+    const o = currentTz();
+    el.tzLabel.textContent = o == null ? '' : `顯示的是${el.tz.selectedOptions[0].textContent}（UTC${o >= 0 ? '+' : '−'}${Math.floor(Math.abs(o) / 60)}${Math.abs(o) % 60 ? ':' + pad(Math.abs(o) % 60) : ''}）`;
+    autoSynced = false; preconnected = false; jumped = false;
+    updateBookmarklet(); saveSettings();
+}
+el.tz.addEventListener('change', onTzChanged);
+el.time.addEventListener('input', () => { autoSynced = false; preconnected = false; jumped = false; updateBookmarklet(); saveSettings(); });
+el.manual.addEventListener('input', () => { updateLeadText(); updateBookmarklet(); });
+el.autoRedirect.addEventListener('change', () => {
+    jumped = false;
+    if (el.autoRedirect.checked && el.url.value && !target.rtt) measureTarget(normUrl(el.url.value)).then(updateLeadText);
+    updateLeadText(); updateBookmarklet();
+});
+
+// 本機模式：持續跟著系統時鐘走；其他模式：偵測系統睡眠或時鐘大跳動
+setInterval(() => {
+    if (mode === 'local') { offset = wallSkew(); return; }
+    const c = cache[mode];
+    if (c && Math.abs(wallSkew() - c.skew) > 50) setWarn('偵測到電腦睡眠或系統時間變動，建議重新對時');
+}, 1000);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        const c = cache[mode];
+        if (mode !== 'local' && c && Math.abs(wallSkew() - c.skew) > 50) syncTime();
+    }
+});
+
+// ============================================================
+// 目標時間與跳轉
+// ============================================================
+
+// 目標時間（伺服器時間）。已經過去超過 1 分鐘就當成明天，解決跨午夜的問題。
+// 開賣時間以選定的時區解讀（例如日本時間 10:00 = 台灣時間 09:00）。
+function targetEpoch(now = serverNow()) {
+    const v = el.time.value;
+    if (!v) return null;
+    const [h, m, s = 0] = v.split(':').map(Number);
+    if (!isFinite(h) || !isFinite(m)) return null;
+    const off = currentTz();
+    let t;
+    if (off == null) {
+        const d = new Date(now);
+        d.setHours(h, m, s || 0, 0);
+        t = d.getTime();
+    } else {
+        const dayStart = Math.floor((now + off * 60000) / 86400000) * 86400000 - off * 60000;
+        t = dayStart + ((h * 60 + m) * 60 + (s || 0)) * 1000;
+    }
+    if (t < now - 60000) t += 86400000;
+    return t;
+}
+
+const manualOffset = () => parseFloat(el.manual.value) || 0;
+
+// 請求要在目標時間「抵達」售票伺服器，所以要提早「單程延遲」送出。
+// 本分頁跳轉通常要開新連線（瀏覽器依網站分區，預連線多半用不到），所以用冷連線的抵達時間。
+function jumpLead() {
+    if (target.coldArrival != null) return target.coldArrival;
+    const c = cache[mode];
+    return c ? c.rtt / 2 : 0;
+}
+function updateLeadText() {
+    if (!el.autoRedirect.checked) { el.lead.textContent = '未啟用自動跳轉'; return; }
+    const lead = jumpLead(), m = manualOffset();
+    el.lead.textContent = `${(lead - m).toFixed(0)} ms` + (m ? `（自動 ${lead.toFixed(0)}${m > 0 ? ' − ' : ' + '}${Math.abs(m)}）` : '（自動估算）');
+}
+
+let autoSynced = false, preconnected = false, jumped = false;
+
+function preconnect(url) {
+    try {
+        const origin = new URL(url).origin;
+        if (document.querySelector(`link[rel="preconnect"][href="${origin}"]`)) return;
+        for (const rel of ['dns-prefetch', 'preconnect']) {
+            const l = document.createElement('link');
+            l.rel = rel; l.href = origin;   // 不加 crossorigin：與頁面導航同一種（帶憑證的）連線
+            document.head.appendChild(l);
+        }
+    } catch { }
+}
+
+// 每一幀與每次背景計時器都會呼叫：處理倒數、自動對時、預連線、跳轉
+function tick() {
+    const now = serverNow();
+    const t = targetEpoch(now);
+    if (t == null) { setTicker(250); document.body.style.backgroundColor = ''; return; }
+    const diff = t - now;
+
+    document.body.style.backgroundColor = (diff > 0 && diff <= 10000) ? '#2a0a0a' : '';
+
+    if (diff > 10000) { autoSynced = false; preconnected = false; jumped = false; }
+
+    if (diff > 0 && diff <= 10000 && !autoSynced && mode !== 'local' && el.autoSync.checked) {
+        autoSynced = true;
+        syncTime({ quick: true });
+    }
+    if (el.autoRedirect.checked && diff > 0 && diff <= 10000 && !preconnected) {
+        preconnected = true;
+        preconnect(normUrl(el.url.value));
+    }
+
+    const threshold = jumpLead() - manualOffset();
+    if (el.autoRedirect.checked && !jumped && diff > -10000 && diff <= threshold) {
+        jumped = true;
+        el.autoRedirect.checked = false;
+        window.location.href = normUrl(el.url.value) || window.location.href;
+        return;
+    }
+    // 接近跳轉時，背景計時器改成每 2ms 檢查一次
+    setTicker(el.autoRedirect.checked && diff - threshold < 2000 && diff - threshold > -100 ? 2 : 100);
+}
+
+// 背景計時器：放在 Web Worker 裡。分頁在背景時，主執行緒的 rAF 會停、setTimeout 最少 1 秒一次，
+// Worker 的計時器則不受影響，可以確保自動跳轉照常觸發。
+const ticker = new Worker(URL.createObjectURL(new Blob(
+    ['let id=null;onmessage=e=>{clearInterval(id);id=setInterval(()=>postMessage(0),e.data)}'],
+    { type: 'text/javascript' })));
+let tickerMs = 0;
+function setTicker(ms) { if (ms !== tickerMs) { tickerMs = ms; ticker.postMessage(ms); } }
+ticker.onmessage = tick;
+setTicker(100);
+
+// ============================================================
+// 畫面
+// ============================================================
+
+function formatClock(t) {
+    const d = partsInTz(t, currentTz());
+    return { hms: `${pad(d.h)}:${pad(d.m)}:${pad(d.s)}`, ms: '.' + pad(d.ms, 3) };
+}
+function formatCountdown(t) {
+    const tgt = targetEpoch(t);
+    if (tgt == null) return { text: '', near: false };
+    const diff = tgt - t;
+    const a = Math.abs(diff);
+    const h = Math.floor(a / 3600000), m = Math.floor(a / 60000) % 60, s = Math.floor(a / 1000) % 60, ms = Math.floor(a % 1000);
+    const body = (h ? `${h}:${pad(m)}` : pad(m)) + `:${pad(s)}.${pad(ms, 3)}`;
+    return { text: diff >= 0 ? `距開賣 −${body}` : `已開賣 +${body}`, near: diff >= 0 && diff <= 10000 };
+}
+
+function renderInto(view, t) {
+    const c = formatClock(t);
+    if (view.hms.textContent !== c.hms) view.hms.textContent = c.hms;
+    view.ms.textContent = c.ms;
+    const cd = formatCountdown(t);
+    view.countdown.textContent = cd.text;
+    view.countdown.classList.toggle('near', cd.near);
+}
+
+let frameInterval = 16.7, lastTs = 0, lastStats = 0;
+function frame(ts) {
+    if (lastTs) { const d = ts - lastTs; if (d > 4 && d < 100) frameInterval += (d - frameInterval) * 0.05; }
+    lastTs = ts;
+    // 這一幀改的內容，要到下一次螢幕刷新才看得到，所以顯示「一幀之後」的時間
+    renderInto(el, serverAt(ts + frameInterval));
+    tick();
+    if (ts - lastStats > 500) {
+        lastStats = ts;
+        el.render.textContent = `${frameInterval.toFixed(1)} ms / +${frameInterval.toFixed(1)} ms`;
+        if (mode === 'local') el.offset.textContent = '0 ms';
+    }
+    requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ============================================================
+// 畫中畫
+// ============================================================
+
+$('btn-pip').addEventListener('click', async () => {
+    if ('documentPictureInPicture' in window) return openDocumentPip();
+    return prepareVideoPip();
+});
+
+// 桌機（Chrome / Edge 116+、Firefox 151+）：Document PiP，自己跑畫面迴圈，
+// 不從主分頁複製內容，所以主分頁切到背景也不會停。
+let pipWin = null;
+async function openDocumentPip() {
+    if (pipWin) { pipWin.close(); pipWin = null; return; }
+    try {
+        pipWin = await documentPictureInPicture.requestWindow({ width: 380, height: 140 });
+    } catch (e) { console.error(e); return; }
+    const doc = pipWin.document;
+    const style = doc.createElement('style');
+    style.textContent = `
+        body { margin: 0; background: #121212; color: #e0e0e0; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; font-variant-numeric: tabular-nums; }
+        .wrap { width: 100%; text-align: center; }
+        #c { font-size: min(14vw, 50vh); font-weight: bold; white-space: nowrap; letter-spacing: -2px; line-height: 1; }
+        .ms { font-size: min(7vw, 25vh); color: #888; }
+        #cd { font-size: min(6vw, 20vh); color: #888; margin-top: 4px; }
+        #cd.near { color: #ff1744; }
+        body.near { background: #2a0a0a; }`;
+    doc.head.appendChild(style);
+    doc.body.innerHTML = '<div class="wrap"><div id="c"><span id="h"></span><span class="ms" id="m"></span></div><div id="cd"></div></div>';
+    const view = { hms: doc.getElementById('h'), ms: doc.getElementById('m'), countdown: doc.getElementById('cd') };
+    const win = pipWin;
+    // PiP 視窗是另一個文件，有自己的 performance 時間軸，要換算回主頁的時間軸
+    const shift = win.performance.timeOrigin - performance.timeOrigin;
+    const loop = ts => {
+        if (pipWin !== win) return;
+        const t = serverAt(ts + shift + frameInterval);
+        renderInto(view, t);
+        doc.body.classList.toggle('near', view.countdown.classList.contains('near'));
+        win.requestAnimationFrame(loop);
+    };
+    win.requestAnimationFrame(loop);
+    win.addEventListener('pagehide', () => { if (pipWin === win) pipWin = null; });
+}
+
+// 手機（iOS / Android）：預錄影片畫中畫。
+// 手機切到別的 App 後網頁 JS 會被暫停，任何「即時畫出來」的時鐘都會凍結。
+// 所以先把接下來一段時間的時鐘，逐格編碼成 mp4，再讓影片播放器播放：
+// 播放是系統的影片解碼器在跑，不靠 JS，所以切 App 也不會停。
+const pipVideo = $('pip-video'), pipProgress = $('pip-progress'), pipStartBtn = $('btn-pip-start');
+let videoStart = 0, videoEnd = 0, videoUrl = null;
+
+const PIP_W = 480, PIP_H = 160, PIP_FPS = 30;
+const MAX_VIDEO_SEC = 600;
+
+async function pickCodec() {
+    if (!('VideoEncoder' in window)) return null;
+    const list = [
+        { codec: 'avc1.42001f', muxer: 'avc', extra: { avc: { format: 'avc' } } },
+        { codec: 'vp09.00.10.08', muxer: 'vp9', extra: {} },
+        { codec: 'av01.0.04M.08', muxer: 'av1', extra: {} },
+    ];
+    for (const c of list) {
+        for (const hw of ['prefer-hardware', 'no-preference']) {
+            const cfg = { codec: c.codec, width: PIP_W, height: PIP_H, bitrate: 200_000, framerate: PIP_FPS, hardwareAcceleration: hw, ...c.extra };
+            try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) return { ...c, cfg }; } catch { }
+        }
+    }
+    return null;
+}
+
+function drawPipFrame(ctx, t) {
+    const c = formatClock(t);
+    const cd = formatCountdown(t);
+    ctx.fillStyle = cd.near ? '#2a0a0a' : '#121212';
+    ctx.fillRect(0, 0, PIP_W, PIP_H);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#e0e0e0';
+    ctx.font = 'bold 76px "Courier New", Courier, monospace';
+    const hmsW = ctx.measureText(c.hms).width;
+    ctx.font = 'bold 40px "Courier New", Courier, monospace';
+    const msW = ctx.measureText(c.ms).width;
+    const x0 = (PIP_W - hmsW - msW) / 2;
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 76px "Courier New", Courier, monospace';
+    ctx.fillText(c.hms, x0, cd.text ? 92 : 108);
+    ctx.font = 'bold 40px "Courier New", Courier, monospace';
+    ctx.fillStyle = '#999';
+    ctx.fillText(c.ms, x0 + hmsW, cd.text ? 92 : 108);
+    if (cd.text) {
+        ctx.textAlign = 'center';
+        ctx.font = '30px "Courier New", Courier, monospace';
+        ctx.fillStyle = cd.near ? '#ff1744' : '#999';
+        ctx.fillText(cd.text, PIP_W / 2, 140);
+    }
+}
+
+async function buildPipVideo(onProgress) {
+    const choice = await pickCodec();
+    if (!choice) throw new Error('這個瀏覽器不支援影片編碼（WebCodecs）');
+    const { Muxer, ArrayBufferTarget } = await import('./vendor/mp4-muxer.mjs');
+
+    // 影片涵蓋：現在到「開賣後 30 秒」，最少 2 分鐘、最多 10 分鐘
+    const now = serverNow();
+    const start = Math.ceil((now + 2000) / 1000) * 1000;
+    const tgt = targetEpoch(now);
+    let durSec = tgt ? Math.ceil((tgt + 30000 - start) / 1000) : 300;
+    durSec = Math.max(120, Math.min(MAX_VIDEO_SEC, durSec));
+    const frames = durSec * PIP_FPS;
+
+    const muxer = new Muxer({
+        target: new ArrayBufferTarget(),
+        video: { codec: choice.muxer, width: PIP_W, height: PIP_H, frameRate: PIP_FPS },
+        fastStart: 'in-memory',
+    });
+    let encErr = null;
+    const encoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: e => { encErr = e; },
+    });
+    encoder.configure(choice.cfg);
+
+    const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(PIP_W, PIP_H) : Object.assign(document.createElement('canvas'), { width: PIP_W, height: PIP_H });
+    const ctx = canvas.getContext('2d');
+    const frameUs = 1e6 / PIP_FPS;
+    for (let k = 0; k < frames; k++) {
+        if (encErr) throw encErr;
+        // 畫面內容取這一格「顯示期間的中點」時間，平均誤差最小
+        drawPipFrame(ctx, start + (k + 0.5) * 1000 / PIP_FPS);
+        const vf = new VideoFrame(canvas, { timestamp: Math.round(k * frameUs), duration: Math.round(frameUs) });
+        encoder.encode(vf, { keyFrame: k % PIP_FPS === 0 });   // 每秒一個關鍵幀，跳轉位置才會準
+        vf.close();
+        if (encoder.encodeQueueSize > 8) {
+            await new Promise(r => encoder.addEventListener('dequeue', r, { once: true }));
+        }
+        if (k % 60 === 0) { onProgress(k / frames); await sleep(0); }
+    }
+    await encoder.flush();
+    if (encErr) throw encErr;
+    muxer.finalize();
+    encoder.close();
+    return { blob: new Blob([muxer.target.buffer], { type: 'video/mp4' }), start, end: start + durSec * 1000, codec: choice.codec };
+}
+
+async function prepareVideoPip() {
+    const btn = $('btn-pip');
+    btn.disabled = true;
+    pipProgress.style.display = 'block';
+    pipStartBtn.style.display = 'none';
+    try {
+        const t0 = performance.now();
+        const r = await buildPipVideo(p => { pipProgress.textContent = `正在產生懸浮時鐘影片… ${(p * 100).toFixed(0)}%`; });
+        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        videoUrl = URL.createObjectURL(r.blob);
+        videoStart = r.start; videoEnd = r.end;
+        pipVideo.src = videoUrl;
+        pipVideo.style.display = 'block';
+        pipVideo.preload = 'auto';
+        pipVideo.load();
+        // iOS 可能要等使用者點擊才載入，最多等 3 秒就繼續
+        await Promise.race([
+            new Promise((res, rej) => { pipVideo.onloadedmetadata = res; pipVideo.onerror = () => rej(new Error('影片無法播放（' + (pipVideo.error && pipVideo.error.message || '格式不支援') + '）')); }),
+            sleep(3000),
+        ]);
+        const endLabel = formatClock(videoEnd).hms;
+        pipProgress.textContent = `影片完成（${((performance.now() - t0) / 1000).toFixed(1)} 秒，${(r.blob.size / 1024).toFixed(0)} KB，${r.codec}），涵蓋到 ${endLabel}。按下面的按鈕開始。`;
+        pipStartBtn.style.display = 'block';
+        btn.textContent = '重新產生影片';
+    } catch (e) {
+        console.error(e);
+        pipProgress.textContent = '無法產生畫中畫影片：' + e.message + '。可以改用上面的「售票頁懸浮時鐘」。';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// 必須在按鈕的點擊事件裡「同步」呼叫 play 與畫中畫，iOS 才會放行
+pipStartBtn.addEventListener('click', () => {
+    const pos = (serverNow() - videoStart) / 1000;
+    if (pos >= (videoEnd - videoStart) / 1000 - 1) {
+        pipProgress.textContent = '影片已經播到尾端，請重新產生。';
+        return;
+    }
+    pipVideo.currentTime = Math.max(0, pos + 0.05);
+    const p = pipVideo.play();
+    if (p) p.catch(e => console.error(e));
+    try {
+        if (pipVideo.requestPictureInPicture && document.pictureInPictureEnabled !== false) {
+            pipVideo.requestPictureInPicture().catch(err => {
+                if (pipVideo.webkitSetPresentationMode) pipVideo.webkitSetPresentationMode('picture-in-picture');
+                else pipProgress.textContent = '無法開啟畫中畫：' + err.message;
             });
+        } else if (pipVideo.webkitSetPresentationMode) {
+            pipVideo.webkitSetPresentationMode('picture-in-picture');
+        } else {
+            pipProgress.textContent = '這個瀏覽器不支援畫中畫，可以改用「售票頁懸浮時鐘」。';
         }
+    } catch (e) { console.error(e); }
+    startVideoAlign();
+});
 
-        function switchMode(newMode) {
-            mode = newMode;
-            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-            document.querySelector(`.tab[data-mode="${mode}"]`).classList.add('active');
-            
-            last10sSynced = false;
-            document.body.style.backgroundColor = 'var(--bg)';
+// 播放中持續校正：影片顯示的時間要和校正後的時間一致
+let aligning = false;
+function startVideoAlign() {
+    if (aligning) return;
+    aligning = true;
+    // 單一幀的量測會有 ±半格的量化誤差（30fps 影片在 60Hz 螢幕上），所以取移動平均再修正
+    let ema = null;
+    const correct = (mediaTime, displayPerf) => {
+        const expected = (serverAt(displayPerf) - videoStart) / 1000;
+        const drift = mediaTime - expected;         // 正：影片跑太快
+        if (Math.abs(drift) > 0.2) { pipVideo.currentTime = expected + 0.03; pipVideo.playbackRate = 1; ema = null; return; }
+        ema = ema == null ? drift : ema * 0.9 + drift * 0.1;
+        if (Math.abs(ema) > 0.008) pipVideo.playbackRate = 1 - Math.max(-0.03, Math.min(0.03, ema));
+        else pipVideo.playbackRate = 1;
+    };
+    if ('requestVideoFrameCallback' in pipVideo) {
+        const cb = (now, md) => {
+            if (!pipVideo.paused) correct(md.mediaTime, md.expectedDisplayTime);
+            pipVideo.requestVideoFrameCallback(cb);
+        };
+        pipVideo.requestVideoFrameCallback(cb);
+    } else {
+        setInterval(() => { if (!pipVideo.paused) correct(pipVideo.currentTime, performance.now()); }, 250);
+    }
+}
+pipVideo.addEventListener('ended', () => { pipProgress.textContent = '影片已播完，請重新產生。'; });
 
-            if (mode === 'local') {
-                timeOffset = 0; rtt = 0;
-                rttEl.innerText = '0 ms'; offsetEl.innerText = '0 ms';
-                syncGroup.style.display = 'none';
-                lastSyncEl.innerText = '-';
-                modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:var(--local);"></span>本機時間模式 (不消耗要求數)`;
-            } else {
-                syncGroup.style.display = 'flex';
-                const state = syncCache[mode];
-                
-                if (state.lastSync !== '-') {
-                    timeOffset = state.offset;
-                    rtt = state.rtt;
-                    rttEl.innerText = rtt + ' ms';
-                    offsetEl.innerText = timeOffset.toFixed(1) + ' ms';
-                    lastSyncEl.innerText = state.lastSync;
-                    
-                    const color = mode === 'standard' ? 'var(--accent)' : 'var(--alert)';
-                    const txt = mode === 'standard' ? '標準對時模式' : '搶票模式';
-                    modeStatus.innerHTML = `<span class="status-dot sync-active" style="background:${color};"></span>${txt} (使用暫存，節省額度)`;
-                } else {
-                    timeOffset = 0; rtt = 0;
-                    rttEl.innerText = '0 ms'; offsetEl.innerText = '0 ms';
-                    lastSyncEl.innerText = '同步中...';
-                    syncTime(); 
-                }
+// ============================================================
+// 售票頁懸浮時鐘（書籤小工具）
+// 這段函式會被轉成字串放進書籤，在售票網站上執行，所以不能用到外面的任何變數。
+// ============================================================
+function ticketPageClock(P) {
+    if (window.__tc) { window.__tc.stop(); return; }
+    var base = function () { return performance.timeOrigin + performance.now(); };
+    var off = P.O + (Date.now() - base());   /* 把「以系統時鐘為準」的差換成「以單調時鐘為準」 */
+    var synced = '';
+    var box = document.createElement('div');
+    box.style.cssText = 'position:fixed;top:8px;right:8px;z-index:2147483647;background:rgba(18,18,18,.88);color:#e0e0e0;font:bold 22px/1.15 "Courier New",monospace;padding:6px 10px;border-radius:8px;text-align:right;box-shadow:0 2px 10px rgba(0,0,0,.5);cursor:pointer;font-variant-numeric:tabular-nums';
+    box.title = '點一下換位置';
+    var top = true;
+    box.onclick = function () { top = !top; box.style.top = top ? '8px' : ''; box.style.bottom = top ? '' : '8px'; };
+    document.body.appendChild(box);
+    var p2 = function (n, w) { n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; };
+    var fireAt = P.T ? P.T - P.L + P.M : 0, fired = false, armed = false, raf = 0;
+    function draw() {
+        var t = base() + off, d = new Date(P.Z == null ? t : t + P.Z * 60000);
+        var hh = P.Z == null ? d.getHours() : d.getUTCHours(), mm = P.Z == null ? d.getMinutes() : d.getUTCMinutes(), ss = P.Z == null ? d.getSeconds() : d.getUTCSeconds();
+        var s = p2(hh) + ':' + p2(mm) + ':' + p2(ss) + '<span style="font-size:15px;color:#999">.' + p2(d.getMilliseconds(), 3) + '</span>';
+        if (P.T) {
+            var diff = P.T - t, a = Math.abs(diff);
+            var cd = p2(Math.floor(a / 60000)) + ':' + p2(Math.floor(a / 1000) % 60) + '.' + p2(Math.floor(a % 1000), 3);
+            s += '<div style="font-size:14px;color:' + (diff > 0 && diff < 10000 ? '#ff1744' : '#999') + '">' + (diff >= 0 ? '−' : '+') + cd + (P.R ? ' ⟳' : '') + ' ' + synced + '</div>';
+            if (P.R && !fired && !armed && fireAt - t < 1000 && fireAt - t > -10000) {
+                armed = true;
+                setTimeout(function () {
+                    while (base() + off < fireAt) { }   /* 最後幾毫秒用忙等，避免計時器誤差 */
+                    fired = true; location.reload();
+                }, Math.max(0, fireAt - t - 4));
             }
-        }
-
-        targetUrlInput.addEventListener('input', () => {
-            syncCache.ticket = { offset: 0, rtt: 0, lastSync: '-' };
-            if (mode === 'ticket') {
-                modeStatus.innerHTML = `<span class="status-dot" style="background:#888;"></span>網址已變更，請手動重新同步`;
-                lastSyncEl.innerText = '待同步';
-            }
-        });
-
-        async function togglePiP() {
-            if (!('documentPictureInPicture' in window)) {
-                alert('您的瀏覽器不支援畫中畫功能 (請使用最新版 Chrome/Edge)');
-                return;
-            }
+        } else if (synced) s += '<div style="font-size:14px;color:#999">' + synced + '</div>';
+        box.innerHTML = s;
+        raf = requestAnimationFrame(draw);
+    }
+    draw();
+    window.__tc = { stop: function () { cancelAnimationFrame(raf); box.remove(); window.__tc = null; } };
+    if (P.A) {
+        (async function () {
             try {
-                const pipWindow = await documentPictureInPicture.requestWindow({ width: 360, height: 120 });
-                const pipStyle = pipWindow.document.createElement('style');
-                pipStyle.textContent = `
-                    body { margin: 0; background: #121212; color: #e0e0e0; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
-                    #clock-container { width: 100%; text-align: center; }
-                    #clock { font-size: min(15vw, 60vh); font-weight: bold; white-space: nowrap; letter-spacing: -2px; margin: 0; line-height: 1; }
-                    #ms { font-size: min(8vw, 30vh); color: #888; }
-                `;
-                pipWindow.document.head.appendChild(pipStyle);
-                pipWindow.document.body.innerHTML = '<div id="clock-container"><div id="clock"></div></div>';
-                
-                setInterval(() => {
-                    if(pipWindow.document.getElementById('clock')) {
-                        pipWindow.document.getElementById('clock').innerHTML = clockEl.innerHTML;
-                    }
-                }, 16);
-            } catch (err) {
-                console.error(err);
-            }
-        }
+                var best = null;
+                for (var i = 0; i < 6; i++) {
+                    var t0 = performance.now();
+                    var r = await fetch(P.A + '/api/time?b=' + i + Math.random(), { cache: 'no-store' });
+                    var j = await r.json();
+                    var t3 = performance.now();
+                    if (i && (!best || t3 - t0 < best[0])) best = [t3 - t0, j.serverTime + P.K - (performance.timeOrigin + (t0 + t3) / 2)];
+                }
+                if (best) { off = best[1]; synced = '✓'; }
+            } catch (e) { synced = '✗'; }
+        })();
+    }
+}
 
-        requestAnimationFrame(updateClock);
-    </script>
+function bookmarkletParams() {
+    const c = cache[mode];
+    const t = targetEpoch();
+    return {
+        O: Math.round((serverNow() - Date.now()) * 10) / 10,   // 伺服器時間 − 系統時間
+        T: t || 0,
+        // 售票頁本身已經連好線，重新整理只要單程延遲
+        L: target.rtt ? Math.round(target.rtt / 2) : (c ? Math.round(c.rtt / 2) : 0),
+        M: manualOffset(),
+        R: el.autoRedirect.checked ? 1 : 0,
+        A: mode === 'local' ? '' : API_BASE,
+        K: mode === 'ticket' && c ? Math.round(c.targetToWorker) : 0,
+        Z: currentTz(),   // 顯示用時區（分鐘），null = 該裝置的本機時區
+    };
+}
+// 整段做 URL 編碼：書籤網址裡的 % 會被瀏覽器當成跳脫字元，不編碼會壞掉
+function bookmarkletCode() {
+    const src = '(' + ticketPageClock.toString().replace(/\s*\n\s*/g, ' ') + ')(' + JSON.stringify(bookmarkletParams()) + ')';
+    return 'javascript:' + encodeURIComponent(src);
+}
+function updateBookmarklet() { $('bookmarklet').href = bookmarkletCode(); }
+// 在本頁點按鈕：直接預覽售票頁時鐘的樣子
+$('bookmarklet').addEventListener('click', e => { e.preventDefault(); ticketPageClock(bookmarkletParams()); });
+$('btn-copy-bm').addEventListener('click', async () => {
+    const code = bookmarkletCode();
+    try { await navigator.clipboard.writeText(code); $('btn-copy-bm').textContent = '已複製 ✓'; }
+    catch { prompt('複製下面這段：', code); }
+    setTimeout(() => { $('btn-copy-bm').textContent = '複製程式碼'; }, 2000);
+});
+// 記住上次的網址、時區、開賣時間（只存在這台裝置的瀏覽器）
+function saveSettings() {
+    try { localStorage.setItem('tc-settings', JSON.stringify({ url: el.url.value, preset: el.preset.value, tz: el.tz.value, time: el.time.value, manual: el.manual.value })); } catch { }
+}
+function loadSettings() {
+    try {
+        const v = JSON.parse(localStorage.getItem('tc-settings') || 'null');
+        if (!v) return;
+        if (v.url) el.url.value = v.url;
+        if (v.preset != null && [...el.preset.options].some(o => o.value === v.preset)) el.preset.value = v.preset;
+        if (v.tz != null) el.tz.value = v.tz;
+        if (v.time) el.time.value = v.time;
+        if (v.manual) el.manual.value = v.manual;
+    } catch { }
+}
+el.manual.addEventListener('change', saveSettings);
+loadSettings();
+if (!el.preset.value) { const o = [...el.preset.options].find(o => o.value && o.value === normUrl(el.url.value).replace(/\/+$/, '')); if (o) el.preset.value = o.value; }
+onTzChanged();
+updateBookmarklet();
+setInterval(updateBookmarklet, 30000);   // 本機模式下系統時間可能微調，定期更新
+applyCache();
+</script>
 </body>
 </html>
